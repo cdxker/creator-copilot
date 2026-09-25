@@ -6,6 +6,8 @@
   "vars": {
     "ENVIRONMENT": "development",
     "PROVIDER": "fake",
+    "OPENAI_MODEL": "gpt-6-luna",
+    "OPENAI_TIMEOUT_MS": "15000",
     "ALLOWED_EXTENSION_ORIGINS": "http://localhost:5173",
     "DAILY_ANALYSIS_LIMIT": "10",
     "NETWORK_DAILY_LIMIT": "100"
@@ -16,6 +18,8 @@
       "vars": {
         "ENVIRONMENT": "production",
         "PROVIDER": "openai",
+        "OPENAI_MODEL": "gpt-6-luna",
+        "OPENAI_TIMEOUT_MS": "15000",
         "ALLOWED_EXTENSION_ORIGINS": "chrome-extension://REPLACE_AFTER_STORE_UPLOAD",
         "DAILY_ANALYSIS_LIMIT": "10",
         "NETWORK_DAILY_LIMIT": "100"

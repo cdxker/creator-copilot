@@ -7,6 +7,9 @@ export type Env = {
   NETWORK_DAILY_LIMIT: string;
   NETWORK_HASH_SALT: string;
   SESSION_SIGNING_SECRET: string;
+  OPENAI_API_KEY?: string;
+  OPENAI_MODEL?: string;
+  OPENAI_TIMEOUT_MS?: string;
 };
 
 export type RuntimeConfig = {
@@ -17,6 +20,9 @@ export type RuntimeConfig = {
   networkDailyLimit: number;
   networkHashSalt: string;
   signingSecret: string;
+  openAiApiKey: string | undefined;
+  openAiModel: string | undefined;
+  openAiTimeoutMs: number | undefined;
 };
 
 export function parseEnv(env: Env): RuntimeConfig {
@@ -27,6 +33,11 @@ export function parseEnv(env: Env): RuntimeConfig {
   );
   const dailyAnalysisLimit = Number.parseInt(env.DAILY_ANALYSIS_LIMIT, 10);
   const networkDailyLimit = Number.parseInt(env.NETWORK_DAILY_LIMIT, 10);
+  const openAiApiKey = env.OPENAI_API_KEY?.trim() || undefined;
+  const openAiModel = env.OPENAI_MODEL?.trim() || undefined;
+  const openAiTimeoutMs = env.OPENAI_TIMEOUT_MS
+    ? Number.parseInt(env.OPENAI_TIMEOUT_MS, 10)
+    : undefined;
 
   if (allowedOrigins.size === 0) throw new Error('At least one allowed extension origin is required.');
   if (!Number.isSafeInteger(dailyAnalysisLimit) || dailyAnalysisLimit < 1 || dailyAnalysisLimit > 100) {
@@ -47,6 +58,18 @@ export function parseEnv(env: Env): RuntimeConfig {
   if (new TextEncoder().encode(env.NETWORK_HASH_SALT).byteLength < 16) {
     throw new Error('NETWORK_HASH_SALT must be at least 16 bytes.');
   }
+  if (env.PROVIDER === 'openai') {
+    if (!openAiApiKey) throw new Error('OPENAI_API_KEY is required for the OpenAI provider.');
+    if (!openAiModel) throw new Error('OPENAI_MODEL is required for the OpenAI provider.');
+    if (
+      openAiTimeoutMs === undefined ||
+      !Number.isSafeInteger(openAiTimeoutMs) ||
+      openAiTimeoutMs < 1_000 ||
+      openAiTimeoutMs > 60_000
+    ) {
+      throw new Error('OPENAI_TIMEOUT_MS must be an integer from 1000 through 60000.');
+    }
+  }
 
   return {
     environment: env.ENVIRONMENT,
@@ -56,5 +79,8 @@ export function parseEnv(env: Env): RuntimeConfig {
     networkDailyLimit,
     networkHashSalt: env.NETWORK_HASH_SALT,
     signingSecret: env.SESSION_SIGNING_SECRET,
+    openAiApiKey,
+    openAiModel,
+    openAiTimeoutMs,
   };
 }

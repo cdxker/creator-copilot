@@ -84,7 +84,10 @@ export class AnalysisService {
 
     let rawOutput: unknown;
     try {
-      rawOutput = await this.dependencies.provider.analyze(input.request);
+      rawOutput = await this.dependencies.provider.analyze(input.request, {
+        safetyIdentifier: `cc_${authentication.session.installationId}`,
+        clientRequestId: input.request.requestId,
+      });
     } catch {
       return {
         ok: false,
