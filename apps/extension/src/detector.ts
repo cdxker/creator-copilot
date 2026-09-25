@@ -17,6 +17,7 @@ export interface RequestInput {
   displayName: string;
   handle: string;
   text: string;
+  followers?: number;
 }
 
 export interface Assessment {
@@ -127,6 +128,11 @@ const SPAM_RULES: Rule[] = [
     test: (input) => /^[A-Za-z]+\d{3,4}$|^[a-z]{2,}_[a-z0-9]{6,}$/.test(input.handle) && !/\d{5,}$/.test(input.handle),
   },
   {
+    label: 'Very few followers',
+    weight: 15,
+    test: (input) => input.followers !== undefined && input.followers < 25,
+  },
+  {
     label: 'Bait words in display name',
     weight: 25,
     test: (input) =>
@@ -166,6 +172,7 @@ export function withPangram(heuristic: Score, pangram: PangramResult): Score {
 
 export function assess(input: RequestInput): Assessment {
   const normalized: RequestInput = {
+    ...input,
     displayName: input.displayName.trim(),
     handle: input.handle.replace(/^@/, '').trim(),
     text: input.text.trim(),

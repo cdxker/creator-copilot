@@ -3,8 +3,12 @@ import type { PangramResponse } from './background';
 import { parseRowText } from './parse';
 
 const DM_ROUTE = /^\/(messages|i\/chat)(\/|$)/;
-const ROW_SELECTOR = '[data-testid="conversation"], a[href^="/messages/"], a[href^="/i/chat/"]';
-const MESSAGE_SELECTOR = '[data-testid="messageEntry"]';
+// XChat (x.com/i/chat): request rows and inbox rows. Request rows have no @handle in their text.
+const CHAT_ROW_SELECTOR = '[data-testid^="dm-message-request-item-"], [data-testid^="dm-conversation-item-"]';
+// Legacy DMs (x.com/messages).
+const LEGACY_ROW_SELECTOR = '[data-testid="conversation"], a[href^="/messages/"]';
+const CHAT_MESSAGE_SELECTOR = '[data-testid^="message-text-"]';
+const LEGACY_MESSAGE_SELECTOR = '[data-testid="messageEntry"]';
 const BADGE_CLASS = 'xrs-badge';
 // Pangram needs some text to work with; one-word openers are left to the heuristics.
 const PANGRAM_MIN_WORDS = 12;
@@ -15,6 +19,7 @@ const pangramCache = new Map<string, Promise<PangramResponse>>();
 
 function pangram(text: string) {
   let pending = pangramCache.get(text);
+  if (!pending && !globalThis.chrome?.runtime?.id) return Promise.resolve<PangramResponse>({ ok: false, reason: 'extension_unavailable' });
   if (!pending) {
     pending = chrome.runtime
       .sendMessage<unknown, PangramResponse>({ type: 'pangram', text })
@@ -97,46 +102,84 @@ function conversationKey(pathname: string) {
   return pathname.replace(/\/+$/, '');
 }
 
+const results = new WeakMap<HTMLElement, { sig: string; result: Assessment }>();
+
+// X re-renders rows freely, so re-apply a badge whenever it has been wiped.
+function apply(host: HTMLElement, sig: string, compute: () => Assessment, inline = false) {
+  const cached = results.get(host);
+  if (cached?.sig === sig) {
+    const hasBadge = !!host.querySelector(`:scope > .${BADGE_CLASS}`);
+    if (hasBadge || worst(cached.result) === 'clean') return cached.result;
+  }
+  const result = cached?.sig === sig ? cached.result : compute();
+  results.set(host, { sig, result });
+  render(host, result, inline);
+  return result;
+}
+
 function scanRows(): { total: number; flagged: number } {
   let total = 0;
   let flagged = 0;
   const seen = new Set<HTMLElement>();
+  const candidates = [
+    ...[...document.querySelectorAll<HTMLElement>(CHAT_ROW_SELECTOR)].map((el) => ({ el, requireHandle: false })),
+    ...[...document.querySelectorAll<HTMLElement>(LEGACY_ROW_SELECTOR)].map((el) => ({ el, requireHandle: true })),
+  ];
 
-  for (const match of document.querySelectorAll<HTMLElement>(ROW_SELECTOR)) {
-    const row = match.closest<HTMLElement>('[data-testid="conversation"]') ?? match;
-    if (seen.has(row) || row.closest('[data-testid="DmActivityViewport"]')) continue;
+  for (const { el, requireHandle } of candidates) {
+    const row = el.closest<HTMLElement>('[data-testid="conversation"]') ?? el;
+    if (seen.has(row) || row.closest('[data-testid="DmActivityViewport"], [data-testid="dm-message-scroller"]')) continue;
     seen.add(row);
 
     const text = row.innerText;
-    const input = parseRowText(text);
+    const description = row.getAttribute('aria-description') ?? row.closest('[aria-description]')?.getAttribute('aria-description') ?? null;
+    const input = parseRowText(text, { requireHandle, description });
     if (!input) continue;
     total += 1;
 
     const href = (row.matches('a') ? row : row.querySelector('a[href]'))?.getAttribute('href');
     if (href) senders.set(conversationKey(href), input);
 
-    if (row.dataset.xrsSig !== text) {
-      row.dataset.xrsSig = text;
-      render(row, assess(input));
-    }
-    if (row.classList.contains('xrs-flagged')) flagged += 1;
+    const result = apply(row, text, () => assess(input));
+    if (worst(result) !== 'clean') flagged += 1;
   }
   return { total, flagged };
 }
 
-function scanThread() {
-  const sender = senders.get(conversationKey(location.pathname));
-  for (const entry of document.querySelectorAll<HTMLElement>(MESSAGE_SELECTOR)) {
-    const text = entry.innerText.trim();
-    if (!text || entry.dataset.xrsSig === text) continue;
-    entry.dataset.xrsSig = text;
-    const result = assess({ displayName: sender?.displayName ?? '', handle: sender?.handle ?? '', text });
-    render(entry, result, true);
+function threadSender(): { displayName: string; handle: string } {
+  const remembered = senders.get(conversationKey(location.pathname));
+  const headerHref = document.querySelector('[data-testid="dm-conversation-header"] a[href]')?.getAttribute('href') ?? '';
+  const headerHandle = headerHref.match(/^(?:https:\/\/x\.com)?\/([A-Za-z0-9_]{1,15})\/?$/)?.[1];
+  const headerName = document.querySelector<HTMLElement>('[data-testid="dm-conversation-username"]')?.innerText.trim();
+  return {
+    displayName: headerName || remembered?.displayName || '',
+    handle: headerHandle || remembered?.handle || '',
+  };
+}
 
-    if (text.split(/\s+/).length < PANGRAM_MIN_WORDS) continue;
+// XChat right-aligns the viewer's own bubbles; only incoming messages are scored.
+function isOwnMessage(entry: HTMLElement) {
+  const id = entry.dataset.testid?.replace(/^message-text-/, '');
+  const bubble = id ? document.querySelector<HTMLElement>(`[data-testid="message-${CSS.escape(id)}"]`) : null;
+  return !!bubble && getComputedStyle(bubble).justifyContent === 'flex-end';
+}
+
+function scanThread() {
+  const sender = threadSender();
+  const entries = document.querySelectorAll<HTMLElement>(`${CHAT_MESSAGE_SELECTOR}, ${LEGACY_MESSAGE_SELECTOR}`);
+  for (const entry of entries) {
+    const text = entry.innerText.trim();
+    if (!text || isOwnMessage(entry)) continue;
+
+    const isNew = results.get(entry)?.sig !== text;
+    const result = apply(entry, text, () => assess({ ...sender, text }), true);
+
+    if (!isNew || text.split(/\s+/).length < PANGRAM_MIN_WORDS) continue;
     void pangram(text).then((response) => {
-      if (!response.ok || entry.dataset.xrsSig !== text) return;
-      render(entry, { ...result, ai: withPangram(result.ai, response.result) }, true);
+      if (!response.ok || results.get(entry)?.sig !== text) return;
+      const merged = { ...result, ai: withPangram(result.ai, response.result) };
+      results.set(entry, { sig: text, result: merged });
+      render(entry, merged, true);
     });
   }
 }

@@ -36,6 +36,14 @@ describe('assess', () => {
   });
 });
 
+describe('followers', () => {
+  it('flags a romance opener from a near-empty account', () => {
+    const result = assess({ displayName: 'Emily Rose', handle: '', text: 'Hello dear how are you', followers: 3 });
+    expect(result.spam.verdict).toBe('likely');
+    expect(result.spam.signals.map((s) => s.label)).toContain('Very few followers');
+  });
+});
+
 describe('withPangram', () => {
   it("lets Pangram's verdict override the heuristic AI verdict", () => {
     const heuristic = assess({ displayName: 'Sam', handle: 'samcodes', text: 'quick q about your post' }).ai;
@@ -60,7 +68,26 @@ describe('parseRowText', () => {
     });
   });
 
-  it('ignores rows without a handle', () => {
-    expect(parseRowText('Message requests\n3 pending')).toBeNull();
+  it('ignores legacy links without a handle', () => {
+    expect(parseRowText('Message requests\n3 pending', { requireHandle: true })).toBeNull();
+  });
+
+  it('parses an XChat request row (no handle, follower count)', () => {
+    expect(parseRowText('Emily Rose\n2h\nHello dear how are you\n12 Followers')).toEqual({
+      displayName: 'Emily Rose',
+      handle: '',
+      text: 'Hello dear how are you',
+      followers: 12,
+    });
+  });
+
+  it('takes the handle from an XChat inbox aria-description', () => {
+    const row = parseRowText('Sam\n53m\nyo', { description: 'Sam, @samcodes, yo, 53m' });
+    expect(row?.handle).toBe('samcodes');
+  });
+
+  it('ignores the preview when the viewer sent the last message', () => {
+    expect(parseRowText('Sam\n1.2K Followers\n3d\nYou: sounds good')?.text).toBe('');
+    expect(parseRowText('Sam\n1.2K Followers\n3d\nYou: sounds good')?.followers).toBe(1200);
   });
 });
