@@ -575,4 +575,3 @@ After the new Worker key is verified, request explicit action-time approval to r
 - Chrome Web Store item ID and current review/publication status.
 - Privacy and support URLs.
 - Confirmation that no raw page context or secrets appear in source, artifact, D1, or logs.
-

@@ -55,3 +55,12 @@ Prepare at least three 1280×800 or 640×400 screenshots with no secrets or real
 5. Optional: Settings with boundaries and deletion controls visible.
 
 Use synthetic handles and text. Do not show invite codes, tokens, browser account details, or another person's content without permission.
+
+## Prepared assets
+
+- Store icon source: `docs/store/assets/creator-copilot-icon-source.png`
+- Required manifest icons: `apps/extension/public/icons/icon-{16,32,48,128}.png`
+- Small promo tile: `docs/store/assets/small-promo-440x280.png`
+- Actual-product screenshot: `docs/store/assets/screenshot-today-1280x800.png`
+
+The screenshot was captured from the packaged v0.2.0 UI with synthetic profile and recommendation data. The icon and promo artwork use the same porcelain, ink-plum, and lacquer-rose visual system as the extension.

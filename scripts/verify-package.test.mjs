@@ -12,11 +12,24 @@ function archive(overrides = {}) {
     version: expectedVersion,
     permissions: ['sidePanel', 'storage', 'activeTab', 'scripting'],
     host_permissions: [`${PRODUCTION_API_ORIGIN}/*`],
+    icons: { 16: 'icons/icon-16.png', 32: 'icons/icon-32.png', 48: 'icons/icon-48.png', 128: 'icons/icon-128.png' },
+  };
+  const png = (size) => {
+    const bytes = new Uint8Array(24);
+    bytes.set([137, 80, 78, 71, 13, 10, 26, 10], 0);
+    bytes.set([0, 0, 0, 13, 73, 72, 68, 82], 8);
+    new DataView(bytes.buffer).setUint32(16, size);
+    new DataView(bytes.buffer).setUint32(20, size);
+    return bytes;
   };
   const files = {
     'manifest.json': strToU8(JSON.stringify(manifest)),
     'index.html': strToU8('<!doctype html><main>Creator Copilot</main>'),
     'assets/app.js': strToU8(`fetch('${PRODUCTION_API_ORIGIN}/v1/health')`),
+    'icons/icon-16.png': png(16),
+    'icons/icon-32.png': png(32),
+    'icons/icon-48.png': png(48),
+    'icons/icon-128.png': png(128),
     ...overrides,
   };
   return zipSync(files);
@@ -30,7 +43,7 @@ describe('release package verification', () => {
   it('accepts the exact release permissions, version, and API origin', () => {
     const result = verifyArchive(archive(), { expectedVersion, expectedApiOrigin: PRODUCTION_API_ORIGIN });
     assert.equal(result.manifest.version, expectedVersion);
-    assert.equal(result.files.length, 3);
+    assert.equal(result.files.length, 7);
   });
 
   it('rejects source maps, tests, fixtures, environment files, and dev vars', () => {
@@ -67,8 +80,22 @@ describe('release package verification', () => {
       version: expectedVersion,
       permissions: ['sidePanel', 'storage', 'activeTab', 'scripting', 'cookies'],
       host_permissions: ['<all_urls>'],
+      icons: { 16: 'icons/icon-16.png', 32: 'icons/icon-32.png', 48: 'icons/icon-48.png', 128: 'icons/icon-128.png' },
     };
     expectRejected(archive({ 'manifest.json': strToU8(JSON.stringify(broadManifest)) }), /permissions/i);
+  });
+
+  it('rejects missing or incorrectly sized manifest icons', () => {
+    expectRejected(archive({ 'icons/icon-128.png': new Uint8Array() }), /icon/i);
+    const badManifest = {
+      manifest_version: 3,
+      name: 'Creator Copilot',
+      version: expectedVersion,
+      permissions: ['sidePanel', 'storage', 'activeTab', 'scripting'],
+      host_permissions: [`${PRODUCTION_API_ORIGIN}/*`],
+      icons: { 128: 'icons/icon-128.png' },
+    };
+    expectRejected(archive({ 'manifest.json': strToU8(JSON.stringify(badManifest)) }), /icons/i);
   });
 
   it('rejects mismatched versions and API origins', () => {
@@ -78,6 +105,7 @@ describe('release package verification', () => {
       version: '0.1.0',
       permissions: ['sidePanel', 'storage', 'activeTab', 'scripting'],
       host_permissions: [`${PRODUCTION_API_ORIGIN}/*`],
+      icons: { 16: 'icons/icon-16.png', 32: 'icons/icon-32.png', 48: 'icons/icon-48.png', 128: 'icons/icon-128.png' },
     };
     expectRejected(archive({ 'manifest.json': strToU8(JSON.stringify(oldManifest)) }), /version/i);
     expectRejected(archive({ 'assets/app.js': strToU8("fetch('https://unexpected.example')") }), /production API origin/i);

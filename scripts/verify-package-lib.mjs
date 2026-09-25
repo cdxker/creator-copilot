@@ -52,6 +52,16 @@ export function verifyArchive(archiveBytes, { expectedVersion, expectedApiOrigin
   assert.equal(manifest.version, expectedVersion, 'Manifest version does not match the release version');
   assert.deepEqual([...manifest.permissions].sort(), [...APPROVED_PERMISSIONS].sort(), 'Manifest permissions changed');
   assert.deepEqual(manifest.host_permissions, [`${expectedApiOrigin}/*`], 'Manifest host permissions changed');
+  const expectedIcons = { 16: 'icons/icon-16.png', 32: 'icons/icon-32.png', 48: 'icons/icon-48.png', 128: 'icons/icon-128.png' };
+  assert.deepEqual(manifest.icons, expectedIcons, 'Manifest icons changed');
+  for (const [declaredSize, filename] of Object.entries(expectedIcons)) {
+    const bytes = archive[filename];
+    assert.ok(bytes && bytes.byteLength >= 24, `Archive is missing a valid ${declaredSize}px icon`);
+    assert.deepEqual([...bytes.slice(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10], `${filename} is not a PNG`);
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    assert.equal(view.getUint32(16), Number(declaredSize), `${filename} has the wrong width`);
+    assert.equal(view.getUint32(20), Number(declaredSize), `${filename} has the wrong height`);
+  }
 
   const textAssets = decodeTextAssets(archive);
   const combinedText = textAssets.map(([, text]) => text).join('\n');

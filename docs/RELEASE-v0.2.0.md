@@ -6,8 +6,8 @@ Status: release candidate; production deployment and Chrome Web Store submission
 
 - File: `release/creator-copilot-extension.zip`
 - Version: `0.2.0`
-- SHA-256: `4AAED645F94F01A47124395B19289CBCAD16C48C0B99F4332861E48D75C62009`
-- Files: 18
+- SHA-256: `2AEC0DC77ABB26A4501872E8DA9D90FD35227277A078722F97267C6A61EFDE17`
+- Files: 22
 - Production API origin: `https://creator-copilot-api.popcorntoohot.workers.dev`
 
 The ZIP is generated from `apps/extension/dist` and is intentionally ignored by Git. Upload this exact file to the GitHub release and Chrome Web Store after the final verification run.
@@ -30,10 +30,10 @@ npm.cmd run package
 
 Results:
 
-- 98 tests passed: API 39, extension 35, shared 18, package policy 6.
+- 99 tests passed: API 39, extension 35, shared 18, package policy 7.
 - All three TypeScript workspace checks passed.
 - Vite production build passed.
-- Package verifier passed with 18 files, four approved permissions, and one production API host.
+- Package verifier passed with 22 files, four approved permissions, four required PNG icon sizes, and one production API host.
 - The verifier rejects source maps, tests, fixtures, environment files, `.dev.vars`, secret-shaped values, localhost/development URLs, unexpected remote hosts, broad permissions, and version mismatches.
 
 ## ZIP contents
@@ -54,6 +54,10 @@ assets/manrope-latin-600-normal-4f0koTD-.woff2
 assets/manrope-latin-600-normal-BqgrALkZ.woff
 assets/manrope-latin-700-normal-BZp_XxE4.woff2
 assets/manrope-latin-700-normal-DGRFkw-m.woff
+icons/icon-128.png
+icons/icon-16.png
+icons/icon-32.png
+icons/icon-48.png
 index.html
 manifest.json
 service-worker-loader.js

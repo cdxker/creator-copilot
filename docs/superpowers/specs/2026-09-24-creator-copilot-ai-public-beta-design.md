@@ -275,4 +275,3 @@ The v0.2 milestone is accepted when:
 - no raw page context appears in D1 or application logs;
 - the clean-profile release flow passes;
 - the owner can revoke a session and disable AI access without shipping a new extension.
-
