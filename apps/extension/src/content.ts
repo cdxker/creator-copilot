@@ -7,15 +7,17 @@ const DM_ROUTE = /^\/(messages|i\/chat)(\/|$)/;
 const CHAT_ROW_SELECTOR = '[data-testid^="dm-message-request-item-"], [data-testid^="dm-conversation-item-"]';
 // Legacy DMs (x.com/messages).
 const LEGACY_ROW_SELECTOR = '[data-testid="conversation"], a[href^="/messages/"]';
-const CHAT_MESSAGE_SELECTOR = '[data-testid^="message-text-"]';
-const LEGACY_MESSAGE_SELECTOR = '[data-testid="messageEntry"]';
-const BADGE_CLASS = 'xrs-badge';
+const MESSAGE_SELECTOR = '[data-testid^="message-text-"], [data-testid="messageEntry"]';
+const HEADER_NAME_SELECTOR = '[data-testid="dm-conversation-username"]';
+const FLAG_CLASS = 'xrs-flag';
+const DIM_CLASS = 'xrs-dimmed';
 // Pangram needs some text to work with; one-word openers are left to the heuristics.
 const PANGRAM_MIN_WORDS = 12;
 
-// Remember who sent each conversation so an opened thread can reuse the handle.
+// Remember who sent each conversation so an opened thread can reuse the sender details.
 const senders = new Map<string, RequestInput>();
 const pangramCache = new Map<string, Promise<PangramResponse>>();
+const results = new WeakMap<HTMLElement, { sig: string; result: Assessment }>();
 
 function pangram(text: string) {
   let pending = pangramCache.get(text);
@@ -33,93 +35,74 @@ function injectStyles() {
   if (document.getElementById('xrs-styles')) return;
   const style = document.createElement('style');
   style.id = 'xrs-styles';
-  // Badge text lives in ::before so it never pollutes the row's innerText.
+  // The flag lives in ::before so it never pollutes the name's innerText.
   style.textContent = `
-    .xrs-flagged { position: relative; }
-    .xrs-flagged.xrs-likely { box-shadow: inset 3px 0 0 #f4212e; }
-    .xrs-flagged.xrs-suspicious { box-shadow: inset 3px 0 0 #ffad1f; }
-    .${BADGE_CLASS} {
-      position: absolute; right: 12px; bottom: 8px; z-index: 2;
-      display: inline-flex; gap: 4px; pointer-events: auto; cursor: help;
-    }
-    .xrs-chip {
-      font: 700 11px/1 -apple-system, "Segoe UI", Roboto, sans-serif;
-      padding: 4px 7px; border-radius: 999px; color: #fff; white-space: nowrap;
-    }
-    .xrs-chip::before { content: attr(data-label); }
-    .xrs-chip.xrs-likely { background: #f4212e; }
-    .xrs-chip.xrs-suspicious { background: #b86e00; }
-    .${BADGE_CLASS}.xrs-inline { position: static; margin: 4px 0 0; }
-    #xrs-summary {
-      position: fixed; left: 16px; bottom: 16px; z-index: 2147483647;
-      font: 600 13px/1.3 -apple-system, "Segoe UI", Roboto, sans-serif;
-      background: rgba(15, 20, 25, 0.92); color: #e7e9ea; border: 1px solid #2f3336;
-      border-radius: 999px; padding: 8px 14px; box-shadow: 0 4px 16px rgba(0,0,0,.35);
-    }
-    #xrs-summary::before { content: attr(data-label); }
-    #xrs-summary[hidden] { display: none; }
+    .${DIM_CLASS} { opacity: 0.4; filter: grayscale(1); transition: opacity 120ms; }
+    .${DIM_CLASS}:hover { opacity: 0.75; }
+    .${FLAG_CLASS} { display: inline-block; margin-left: 6px; cursor: help; font-style: normal; }
+    .${FLAG_CLASS}::before { content: "\\1F6A9"; }
   `;
   document.head.append(style);
+}
+
+function isFlagged(result: Assessment) {
+  return result.ai.verdict !== 'clean' || result.spam.verdict !== 'clean';
 }
 
 function describe(kind: string, score: Score) {
   return `${kind}: ${score.score}/100 (${score.verdict})` + score.signals.map((s) => `\n  • ${s.label}`).join('');
 }
 
-function chip(label: string, verdict: Score['verdict']) {
-  const el = document.createElement('span');
-  el.className = `xrs-chip xrs-${verdict}`;
-  el.dataset.label = label;
-  return el;
+// The deepest element whose text is exactly the display name.
+function findNameElement(root: HTMLElement, name: string): HTMLElement | null {
+  if (!name) return null;
+  let match: HTMLElement | null = null;
+  for (const el of root.querySelectorAll<HTMLElement>('span, div')) {
+    if (el.innerText?.trim() === name) match = el;
+  }
+  return match;
 }
 
-function worst(result: Assessment): Score['verdict'] {
-  const verdicts = [result.ai.verdict, result.spam.verdict];
-  return verdicts.includes('likely') ? 'likely' : verdicts.includes('suspicious') ? 'suspicious' : 'clean';
+function setFlag(nameEl: HTMLElement | null, result: Assessment) {
+  if (!nameEl) return;
+  let flag = nameEl.querySelector<HTMLElement>(`:scope > .${FLAG_CLASS}`);
+  if (!isFlagged(result)) {
+    flag?.remove();
+    return;
+  }
+  if (!flag) {
+    flag = document.createElement('i');
+    flag.className = FLAG_CLASS;
+    nameEl.append(flag);
+  }
+  flag.title = `${describe('AI-written', result.ai)}\n${describe('Spam account', result.spam)}`;
 }
 
-function render(host: HTMLElement, result: Assessment, inline = false) {
-  host.querySelector(`:scope > .${BADGE_CLASS}`)?.remove();
-  host.classList.remove('xrs-flagged', 'xrs-likely', 'xrs-suspicious');
-
-  const verdict = worst(result);
-  if (verdict === 'clean') return;
-
-  const badge = document.createElement('span');
-  badge.className = BADGE_CLASS + (inline ? ' xrs-inline' : '');
-  badge.title = `${describe('AI-written', result.ai)}\n${describe('Spam account', result.spam)}`;
-  if (result.ai.verdict !== 'clean') {
-    badge.append(chip(result.ai.verdict === 'likely' ? 'Likely AI' : 'Maybe AI', result.ai.verdict));
+// Scores `host` once per distinct `sig`, upgrading the AI verdict with Pangram when there's enough text.
+function evaluate(host: HTMLElement, sig: string, input: RequestInput, show: (result: Assessment) => void) {
+  const cached = results.get(host);
+  if (cached?.sig === sig) {
+    show(cached.result);
+    return;
   }
-  if (result.spam.verdict !== 'clean') {
-    badge.append(chip(result.spam.verdict === 'likely' ? 'Likely spam' : 'Maybe spam', result.spam.verdict));
-  }
-  host.classList.add('xrs-flagged', `xrs-${verdict}`);
-  host.append(badge);
+  const result = assess(input);
+  results.set(host, { sig, result });
+  show(result);
+
+  if (input.text.split(/\s+/).length < PANGRAM_MIN_WORDS) return;
+  void pangram(input.text).then((response) => {
+    if (!response.ok || results.get(host)?.sig !== sig) return;
+    const merged = { ...result, ai: withPangram(result.ai, response.result) };
+    results.set(host, { sig, result: merged });
+    show(merged);
+  });
 }
 
 function conversationKey(pathname: string) {
   return pathname.replace(/\/+$/, '');
 }
 
-const results = new WeakMap<HTMLElement, { sig: string; result: Assessment }>();
-
-// X re-renders rows freely, so re-apply a badge whenever it has been wiped.
-function apply(host: HTMLElement, sig: string, compute: () => Assessment, inline = false) {
-  const cached = results.get(host);
-  if (cached?.sig === sig) {
-    const hasBadge = !!host.querySelector(`:scope > .${BADGE_CLASS}`);
-    if (hasBadge || worst(cached.result) === 'clean') return cached.result;
-  }
-  const result = cached?.sig === sig ? cached.result : compute();
-  results.set(host, { sig, result });
-  render(host, result, inline);
-  return result;
-}
-
-function scanRows(): { total: number; flagged: number } {
-  let total = 0;
-  let flagged = 0;
+function scanRows() {
   const seen = new Set<HTMLElement>();
   const candidates = [
     ...[...document.querySelectorAll<HTMLElement>(CHAT_ROW_SELECTOR)].map((el) => ({ el, requireHandle: false })),
@@ -135,26 +118,15 @@ function scanRows(): { total: number; flagged: number } {
     const description = row.getAttribute('aria-description') ?? row.closest('[aria-description]')?.getAttribute('aria-description') ?? null;
     const input = parseRowText(text, { requireHandle, description });
     if (!input) continue;
-    total += 1;
 
     const href = (row.matches('a') ? row : row.querySelector('a[href]'))?.getAttribute('href');
     if (href) senders.set(conversationKey(href), input);
 
-    const result = apply(row, text, () => assess(input));
-    if (worst(result) !== 'clean') flagged += 1;
+    evaluate(row, text, input, (result) => {
+      row.classList.toggle(DIM_CLASS, isFlagged(result));
+      setFlag(findNameElement(row, input.displayName), result);
+    });
   }
-  return { total, flagged };
-}
-
-function threadSender(): { displayName: string; handle: string } {
-  const remembered = senders.get(conversationKey(location.pathname));
-  const headerHref = document.querySelector('[data-testid="dm-conversation-header"] a[href]')?.getAttribute('href') ?? '';
-  const headerHandle = headerHref.match(/^(?:https:\/\/x\.com)?\/([A-Za-z0-9_]{1,15})\/?$/)?.[1];
-  const headerName = document.querySelector<HTMLElement>('[data-testid="dm-conversation-username"]')?.innerText.trim();
-  return {
-    displayName: headerName || remembered?.displayName || '',
-    handle: headerHandle || remembered?.handle || '',
-  };
 }
 
 // XChat right-aligns the viewer's own bubbles; only incoming messages are scored.
@@ -165,47 +137,33 @@ function isOwnMessage(entry: HTMLElement) {
 }
 
 function scanThread() {
-  const sender = threadSender();
-  const entries = document.querySelectorAll<HTMLElement>(`${CHAT_MESSAGE_SELECTOR}, ${LEGACY_MESSAGE_SELECTOR}`);
-  for (const entry of entries) {
-    const text = entry.innerText.trim();
-    if (!text || isOwnMessage(entry)) continue;
+  const nameEl = document.querySelector<HTMLElement>(HEADER_NAME_SELECTOR);
+  if (!nameEl) return;
 
-    const isNew = results.get(entry)?.sig !== text;
-    const result = apply(entry, text, () => assess({ ...sender, text }), true);
+  const incoming = [...document.querySelectorAll<HTMLElement>(MESSAGE_SELECTOR)]
+    .filter((entry) => !isOwnMessage(entry))
+    .map((entry) => entry.innerText.trim())
+    .filter(Boolean);
+  if (!incoming.length) return;
 
-    if (!isNew || text.split(/\s+/).length < PANGRAM_MIN_WORDS) continue;
-    void pangram(text).then((response) => {
-      if (!response.ok || results.get(entry)?.sig !== text) return;
-      const merged = { ...result, ai: withPangram(result.ai, response.result) };
-      results.set(entry, { sig: text, result: merged });
-      render(entry, merged, true);
-    });
-  }
-}
+  const remembered = senders.get(conversationKey(location.pathname));
+  const headerHref = document.querySelector('[data-testid="dm-conversation-header"] a[href]')?.getAttribute('href') ?? '';
+  const headerHandle = headerHref.match(/^(?:https:\/\/x\.com)?\/([A-Za-z0-9_]{1,15})\/?$/)?.[1];
+  const input: RequestInput = {
+    displayName: nameEl.innerText.trim() || remembered?.displayName || '',
+    handle: headerHandle || remembered?.handle || '',
+    text: incoming.join('\n'),
+    ...(remembered?.followers === undefined ? {} : { followers: remembered.followers }),
+  };
 
-function updateSummary(total: number, flagged: number) {
-  let summary = document.getElementById('xrs-summary');
-  if (!summary) {
-    summary = document.createElement('div');
-    summary.id = 'xrs-summary';
-    summary.title = 'X Request Screener — hover a badge to see why it was flagged';
-    document.body.append(summary);
-  }
-  summary.hidden = total === 0;
-  const label = `🛡 ${flagged} of ${total} conversation${total === 1 ? '' : 's'} flagged`;
-  if (summary.dataset.label !== label) summary.dataset.label = label;
+  evaluate(nameEl, `${location.pathname}\n${input.text}`, input, (result) => setFlag(nameEl, result));
 }
 
 function scan() {
-  if (!DM_ROUTE.test(location.pathname)) {
-    document.getElementById('xrs-summary')?.setAttribute('hidden', '');
-    return;
-  }
+  if (!DM_ROUTE.test(location.pathname)) return;
   injectStyles();
-  const { total, flagged } = scanRows();
+  scanRows();
   scanThread();
-  updateSummary(total, flagged);
 }
 
 let pending = 0;

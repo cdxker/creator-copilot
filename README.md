@@ -1,11 +1,11 @@
 # X Request Screener
 
-A Chrome extension that overlays badges on your X (Twitter) message requests, flagging messages that look **AI-written** and senders that look like **spam accounts**. No sidebar, no popup — badges appear directly on the DM list and inside opened threads, plus a small counter in the bottom-left corner.
+A Chrome extension that overlays badges on your X (Twitter) message requests, flagging messages that look **AI-written** and senders that look like **spam accounts**. No sidebar, no popup: flagged message requests are grayed out with a 🚩 next to the sender's name, and an opened conversation shows 🚩 next to the name in its header.
 
 - **Likely / Maybe AI** — stock outreach openers ("I hope this message finds you well", "I came across your profile"), LLM vocabulary, generic flattery, templated pitches, em-dash-heavy or letter-formatted text.
 - **Likely / Maybe spam** — crypto/investment pitches, pushes to Telegram/WhatsApp, promotion services, romance bait, fake "support" notices, links, bare "hi" openers, digit-string handles, bait words in display names.
 
-Hover a badge to see the score and every signal that fired. The spam check and the first-pass AI check run locally with heuristics in `apps/extension/src/detector.ts`.
+Hover a 🚩 to see the score and every signal that fired. The spam check and the first-pass AI check run locally with heuristics in `apps/extension/src/detector.ts`.
 
 When the backend is configured, messages of 12+ words in an opened thread are also sent to [Pangram](https://www.pangram.com) through a Cloudflare Worker (`apps/worker`), and Pangram's verdict replaces the heuristic AI verdict. The worker holds the Pangram key, requires a shared token, and caches results by message hash for 30 days so copy-pasted spam is only paid for once.
 
