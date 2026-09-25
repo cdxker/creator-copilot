@@ -30,7 +30,7 @@ npm.cmd run package
 
 Results:
 
-- 96 tests passed: API 37, extension 35, shared 18, package policy 6.
+- 98 tests passed: API 39, extension 35, shared 18, package policy 6.
 - All three TypeScript workspace checks passed.
 - Vite production build passed.
 - Package verifier passed with 18 files, four approved permissions, and one production API host.
@@ -59,11 +59,18 @@ manifest.json
 service-worker-loader.js
 ```
 
-## Deployment evidence pending
+## Production deployment evidence
 
-- Production Worker health and public page results
-- Production D1 migrations
-- Bounded live OpenAI request identifier and quota result
+- Worker URL: `https://creator-copilot-api.popcorntoohot.workers.dev`
+- Production health: HTTP 200, `ok: true`, schema version 1.
+- Privacy page: HTTP 200 with restrictive CSP. Hostile origin: HTTP 403. Invalid invite: HTTP 401.
+- D1 migrations `0001_auth.sql` and `0002_usage.sql` applied to isolated development and production databases.
+- Live bounded request: client request ID `709e6510-7b9d-4ac4-93e5-7f4a5de8a01f`; three recommendations, three evidence items, quota 9 of 10 remaining.
+- Production accounting after two synthetic calls: two analyses, 558 input tokens, 541 output tokens. The first pre-fix call correctly charged quota but did not capture tokens; the second verified the deployed accounting fix.
+- D1 schema contains no columns for public-page text, creator profile text, generated drafts, X handles, or analyzed URLs.
+
+## Release evidence pending
+
 - Final clean-install Chrome smoke test
 - GitHub release URL and downloaded-artifact hash
 - Chrome Web Store item ID and review status

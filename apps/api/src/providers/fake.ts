@@ -6,10 +6,10 @@ import {
   type CreatorProfile,
   type PageContext,
 } from '@creator-copilot/shared';
-import type { AnalysisProvider } from './types';
+import type { AnalysisProvider, AnalysisProviderResult } from './types';
 
 export class FakeAnalysisProvider implements AnalysisProvider {
-  async analyze(request: AnalysisRequest): Promise<AnalysisPayload> {
+  async analyze(request: AnalysisRequest): Promise<AnalysisProviderResult> {
     const profile: CreatorProfile = {
       ...request.profile,
       contentFrequency: 'Daily',
@@ -38,7 +38,7 @@ export class FakeAnalysisProvider implements AnalysisProvider {
       .filter((entry): entry is [string, number] => typeof entry[1] === 'number')
       .map(([name, value]) => `${name}: ${value.toLocaleString('en-US')}`);
 
-    return {
+    const payload: AnalysisPayload = {
       schemaVersion: API_SCHEMA_VERSION,
       summary: `This ${request.context.pageType} has a concise, recognizable premise that can be tested with a clearer next action.`,
       evidence: [
@@ -58,5 +58,6 @@ export class FakeAnalysisProvider implements AnalysisProvider {
       },
       notices: ['Performance explanations are hypotheses based only on the context you supplied.'],
     };
+    return { payload };
   }
 }

@@ -27,13 +27,17 @@ const request: AnalysisRequest = {
 };
 
 async function validPayload() {
-  return new FakeAnalysisProvider().analyze(request);
+  return (await new FakeAnalysisProvider().analyze(request)).payload;
 }
 
 describe('OpenAIAnalysisProvider', () => {
   it('uses Responses structured output with separated untrusted input', async () => {
     const payload = await validPayload();
-    const parse = vi.fn().mockResolvedValue({ output_parsed: payload, _request_id: 'req_123' });
+    const parse = vi.fn().mockResolvedValue({
+      output_parsed: payload,
+      _request_id: 'req_123',
+      usage: { input_tokens: 321, output_tokens: 123, total_tokens: 444 },
+    });
     const provider = new OpenAIAnalysisProvider({
       client: { responses: { parse } },
       model: 'gpt-6-luna',
@@ -45,7 +49,11 @@ describe('OpenAIAnalysisProvider', () => {
       clientRequestId: request.requestId,
     });
 
-    expect(analysisPayloadSchema.parse(result)).toEqual(payload);
+    expect(analysisPayloadSchema.parse(result.payload)).toEqual(payload);
+    expect(result).toMatchObject({
+      usage: { inputTokens: 321, outputTokens: 123 },
+      providerRequestId: 'req_123',
+    });
     expect(parse).toHaveBeenCalledTimes(1);
     const call = parse.mock.calls[0];
     expect(call).toBeDefined();
@@ -80,7 +88,7 @@ describe('OpenAIAnalysisProvider', () => {
         safetyIdentifier: 'cc_installation-123',
         clientRequestId: request.requestId,
       }),
-    ).toBeNull();
+    ).toMatchObject({ payload: null, providerRequestId: 'req_refused' });
     expect(parse).toHaveBeenCalledTimes(1);
   });
 

@@ -82,12 +82,19 @@ export class AnalysisService {
       };
     }
 
-    let rawOutput: unknown;
+    let providerResult;
     try {
-      rawOutput = await this.dependencies.provider.analyze(input.request, {
+      providerResult = await this.dependencies.provider.analyze(input.request, {
         safetyIdentifier: `cc_${authentication.session.installationId}`,
         clientRequestId: input.request.requestId,
       });
+      if (providerResult.usage) {
+        await this.dependencies.quota.recordTokens(
+          authentication.session.id,
+          charge.day,
+          providerResult.usage,
+        );
+      }
     } catch {
       return {
         ok: false,
@@ -99,7 +106,7 @@ export class AnalysisService {
       };
     }
 
-    const parsed = analysisPayloadSchema.safeParse(rawOutput);
+    const parsed = analysisPayloadSchema.safeParse(providerResult.payload);
     if (!parsed.success) {
       return {
         ok: false,

@@ -6,6 +6,10 @@ import type { AnalysisProvider, AnalysisProviderContext } from './types';
 type OpenAIResponse = {
   output_parsed?: unknown;
   _request_id?: string | null;
+  usage?: {
+    input_tokens?: number;
+    output_tokens?: number;
+  } | null;
 };
 
 export type OpenAIResponsesClient = {
@@ -28,7 +32,7 @@ export class OpenAIAnalysisProvider implements AnalysisProvider {
     }
   }
 
-  async analyze(request: AnalysisRequest, context?: AnalysisProviderContext): Promise<unknown> {
+  async analyze(request: AnalysisRequest, context?: AnalysisProviderContext) {
     if (!context) throw new Error('OpenAI provider context is required.');
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.options.timeoutMs);
@@ -54,7 +58,15 @@ export class OpenAIAnalysisProvider implements AnalysisProvider {
           headers: { 'X-Client-Request-Id': context.clientRequestId },
         },
       );
-      return response.output_parsed ?? null;
+      const inputTokens = response.usage?.input_tokens;
+      const outputTokens = response.usage?.output_tokens;
+      return {
+        payload: response.output_parsed ?? null,
+        ...(Number.isSafeInteger(inputTokens) && Number.isSafeInteger(outputTokens)
+          ? { usage: { inputTokens: inputTokens!, outputTokens: outputTokens! } }
+          : {}),
+        ...(response._request_id ? { providerRequestId: response._request_id } : {}),
+      };
     } catch (cause) {
       throw new Error('OpenAI request failed.', { cause });
     } finally {

@@ -34,7 +34,8 @@ describe('FakeAnalysisProvider', () => {
     const second = await provider.analyze(request);
 
     expect(first).toEqual(second);
-    expect(analysisPayloadSchema.parse(first)).toEqual(first);
-    expect(first.recommendations).toHaveLength(3);
+    expect(analysisPayloadSchema.parse(first.payload)).toEqual(first.payload);
+    expect(first.payload).toMatchObject({ recommendations: expect.any(Array) });
+    expect((first.payload as { recommendations: unknown[] }).recommendations).toHaveLength(3);
   });
 });

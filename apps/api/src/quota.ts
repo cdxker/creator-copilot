@@ -5,10 +5,11 @@ export type Clock = () => Date;
 export interface UsageStore {
   chargeSession(sessionId: string, day: string, networkHash: string, limit: number): Promise<number | null>;
   chargeNetwork(networkHash: string, day: string, limit: number): Promise<number | null>;
+  recordTokens(sessionId: string, day: string, inputTokens: number, outputTokens: number): Promise<void>;
 }
 
 export type QuotaChargeResult =
-  | { ok: true; quota: Quota }
+  | { ok: true; quota: Quota; day: string }
   | { ok: false; reason: 'session_limit' | 'network_limit'; resetsAt: string; quotaConsumed?: boolean };
 
 const encoder = new TextEncoder();
@@ -72,12 +73,23 @@ export class QuotaService {
 
     return {
       ok: true,
+      day,
       quota: {
         remaining: this.options.dailyLimit - sessionCount,
         limit: this.options.dailyLimit,
         resetsAt,
       },
     };
+  }
+
+  async recordTokens(
+    sessionId: string,
+    day: string,
+    usage: { inputTokens: number; outputTokens: number },
+  ): Promise<void> {
+    if (!Number.isSafeInteger(usage.inputTokens) || usage.inputTokens < 0) throw new Error('Invalid input token count.');
+    if (!Number.isSafeInteger(usage.outputTokens) || usage.outputTokens < 0) throw new Error('Invalid output token count.');
+    await this.options.store.recordTokens(sessionId, day, usage.inputTokens, usage.outputTokens);
   }
 }
 
@@ -118,10 +130,21 @@ export class D1UsageStore implements UsageStore {
       .first<{ count: number }>();
     return row?.count ?? null;
   }
+
+  async recordTokens(sessionId: string, day: string, inputTokens: number, outputTokens: number): Promise<void> {
+    await this.database
+      .prepare(
+        `UPDATE daily_usage
+         SET input_tokens = input_tokens + ?, output_tokens = output_tokens + ?
+         WHERE session_id = ? AND day = ?`,
+      )
+      .bind(inputTokens, outputTokens, sessionId, day)
+      .run();
+  }
 }
 
 export class MemoryUsageStore implements UsageStore {
-  private readonly sessions = new Map<string, { count: number; networkHash: string }>();
+  private readonly sessions = new Map<string, { count: number; networkHash: string; inputTokens: number; outputTokens: number }>();
   private readonly networks = new Map<string, number>();
 
   async chargeSession(
@@ -134,8 +157,25 @@ export class MemoryUsageStore implements UsageStore {
     const current = this.sessions.get(key)?.count ?? 0;
     if (current >= limit) return null;
     const count = current + 1;
-    this.sessions.set(key, { count, networkHash });
+    const previous = this.sessions.get(key);
+    this.sessions.set(key, {
+      count,
+      networkHash,
+      inputTokens: previous?.inputTokens ?? 0,
+      outputTokens: previous?.outputTokens ?? 0,
+    });
     return count;
+  }
+
+  async recordTokens(sessionId: string, day: string, inputTokens: number, outputTokens: number): Promise<void> {
+    const key = `${sessionId}:${day}`;
+    const current = this.sessions.get(key);
+    if (!current) throw new Error('Cannot record tokens before charging usage.');
+    this.sessions.set(key, {
+      ...current,
+      inputTokens: current.inputTokens + inputTokens,
+      outputTokens: current.outputTokens + outputTokens,
+    });
   }
 
   async chargeNetwork(networkHash: string, day: string, limit: number): Promise<number | null> {

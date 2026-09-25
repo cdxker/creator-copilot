@@ -41,8 +41,9 @@ function fixture(provider = new FakeAnalysisProvider()) {
       revokedAt: null,
     },
   });
+  const store = new MemoryUsageStore();
   const quota = new QuotaService({
-    store: new MemoryUsageStore(),
+    store,
     dailyLimit: 10,
     networkLimit: 100,
     networkSalt: 'test-network-salt-that-is-long-enough',
@@ -50,6 +51,7 @@ function fixture(provider = new FakeAnalysisProvider()) {
   });
   return {
     authenticateHeader,
+    store,
     service: new AnalysisService({ authenticator: { authenticateHeader }, quota, provider }),
   };
 }
@@ -70,6 +72,34 @@ describe('AnalysisService', () => {
     expect(authenticateHeader).toHaveBeenCalledWith('Bearer valid');
   });
 
+  it('records provider token usage against the charged session day', async () => {
+    const payload = (await new FakeAnalysisProvider().analyze(request)).payload;
+    const provider = {
+      analyze: vi.fn().mockResolvedValue({
+        payload,
+        usage: { inputTokens: 321, outputTokens: 123 },
+        providerRequestId: 'req_usage',
+      }),
+    };
+    const { service, store } = fixture(provider);
+
+    const result = await service.analyze({
+      authorization: 'Bearer valid',
+      request,
+      networkIdentifier: '203.0.113.42',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(store.inspect()).toMatchObject({
+      sessions: [
+        [
+          'session-1:2026-09-24',
+          { count: 1, inputTokens: 321, outputTokens: 123 },
+        ],
+      ],
+    });
+  });
+
   it('rejects unsafe context before charging or calling the provider', async () => {
     const provider = { analyze: vi.fn() };
     const { service } = fixture(provider);
@@ -84,7 +114,7 @@ describe('AnalysisService', () => {
   });
 
   it('fails closed on malformed provider output after consuming one quota unit', async () => {
-    const provider = { analyze: vi.fn().mockResolvedValue({ summary: 'missing everything else' }) };
+    const provider = { analyze: vi.fn().mockResolvedValue({ payload: { summary: 'missing everything else' } }) };
     const { service } = fixture(provider);
     const result = await service.analyze({
       authorization: 'Bearer valid',

@@ -57,6 +57,19 @@ describe('QuotaService', () => {
     });
     expect(JSON.stringify(store.inspect())).not.toContain('203.0.113.42');
   });
+
+  it('records token usage on the same charged UTC day', async () => {
+    const { service, store } = fixture();
+    const charge = await service.charge('session-1', '203.0.113.42');
+    expect(charge).toMatchObject({ ok: true, day: '2026-09-24' });
+    if (!charge.ok) throw new Error('Expected a quota charge.');
+
+    await service.recordTokens('session-1', charge.day, { inputTokens: 50, outputTokens: 20 });
+
+    expect(store.inspect()).toMatchObject({
+      sessions: [['session-1:2026-09-24', { count: 1, inputTokens: 50, outputTokens: 20 }]],
+    });
+  });
 });
 
 describe('hashNetworkIdentifier', () => {
