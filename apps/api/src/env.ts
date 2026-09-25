@@ -4,6 +4,8 @@ export type Env = {
   PROVIDER: 'fake' | 'openai';
   ALLOWED_EXTENSION_ORIGINS: string;
   DAILY_ANALYSIS_LIMIT: string;
+  NETWORK_DAILY_LIMIT: string;
+  NETWORK_HASH_SALT: string;
   SESSION_SIGNING_SECRET: string;
 };
 
@@ -12,6 +14,8 @@ export type RuntimeConfig = {
   provider: Env['PROVIDER'];
   allowedOrigins: Set<string>;
   dailyAnalysisLimit: number;
+  networkDailyLimit: number;
+  networkHashSalt: string;
   signingSecret: string;
 };
 
@@ -22,10 +26,14 @@ export function parseEnv(env: Env): RuntimeConfig {
       .filter(Boolean),
   );
   const dailyAnalysisLimit = Number.parseInt(env.DAILY_ANALYSIS_LIMIT, 10);
+  const networkDailyLimit = Number.parseInt(env.NETWORK_DAILY_LIMIT, 10);
 
   if (allowedOrigins.size === 0) throw new Error('At least one allowed extension origin is required.');
   if (!Number.isSafeInteger(dailyAnalysisLimit) || dailyAnalysisLimit < 1 || dailyAnalysisLimit > 100) {
     throw new Error('DAILY_ANALYSIS_LIMIT must be an integer from 1 through 100.');
+  }
+  if (!Number.isSafeInteger(networkDailyLimit) || networkDailyLimit < dailyAnalysisLimit || networkDailyLimit > 10_000) {
+    throw new Error('NETWORK_DAILY_LIMIT must be an integer between the session limit and 10000.');
   }
   if (
     env.ENVIRONMENT === 'production' &&
@@ -36,12 +44,17 @@ export function parseEnv(env: Env): RuntimeConfig {
   if (new TextEncoder().encode(env.SESSION_SIGNING_SECRET).byteLength < 32) {
     throw new Error('SESSION_SIGNING_SECRET must be at least 32 bytes.');
   }
+  if (new TextEncoder().encode(env.NETWORK_HASH_SALT).byteLength < 16) {
+    throw new Error('NETWORK_HASH_SALT must be at least 16 bytes.');
+  }
 
   return {
     environment: env.ENVIRONMENT,
     provider: env.PROVIDER,
     allowedOrigins,
     dailyAnalysisLimit,
+    networkDailyLimit,
+    networkHashSalt: env.NETWORK_HASH_SALT,
     signingSecret: env.SESSION_SIGNING_SECRET,
   };
 }

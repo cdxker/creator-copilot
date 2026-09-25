@@ -1,4 +1,9 @@
-import { API_SCHEMA_VERSION, inviteRedemptionRequestSchema } from '@creator-copilot/shared';
+import {
+  API_SCHEMA_VERSION,
+  analysisRequestSchema,
+  inviteRedemptionRequestSchema,
+} from '@creator-copilot/shared';
+import type { AnalysisService } from './analysis';
 import type { AuthGateway } from './auth';
 import { errorResponse } from './errors';
 
@@ -10,6 +15,7 @@ export type RouterDependencies = {
   allowedOrigins: ReadonlySet<string>;
   logger?: Logger;
   auth?: AuthGateway;
+  analysis?: Pick<AnalysisService, 'analyze'>;
 };
 
 export type JsonBodyResult =
@@ -61,7 +67,7 @@ function authErrorReason(reason: 'invalid' | 'expired' | 'revoked') {
   return { code: 'authentication_required' as const, message: 'A valid session is required.' };
 }
 
-export function createRouter({ allowedOrigins, logger = console, auth }: RouterDependencies) {
+export function createRouter({ allowedOrigins, logger = console, auth, analysis }: RouterDependencies) {
   return {
     async fetch(request: Request): Promise<Response> {
       const originHeader = request.headers.get('origin') ?? undefined;
@@ -169,6 +175,58 @@ export function createRouter({ allowedOrigins, logger = console, auth }: RouterD
           return errorResponse(401, { ...details, retryable: false }, securityHeaders(allowedOrigin));
         }
         return new Response(null, { status: 204, headers: securityHeaders(allowedOrigin) });
+      }
+
+      if (url.pathname === '/v1/analyses') {
+        if (request.method !== 'POST') {
+          return errorResponse(
+            405,
+            { code: 'method_not_allowed', message: 'Method not allowed.' },
+            { ...securityHeaders(allowedOrigin), allow: 'POST' },
+          );
+        }
+        if (!analysis) {
+          return errorResponse(
+            503,
+            { code: 'internal_error', message: 'Analysis is temporarily unavailable.', retryable: true },
+            securityHeaders(allowedOrigin),
+          );
+        }
+        const body = await readJsonBody(request);
+        if (!body.ok) {
+          return errorResponse(
+            body.status,
+            { code: 'invalid_request', message: body.message, quotaConsumed: false },
+            securityHeaders(allowedOrigin),
+          );
+        }
+        const parsed = analysisRequestSchema.safeParse(body.value);
+        if (!parsed.success) {
+          return errorResponse(
+            400,
+            { code: 'invalid_request', message: 'The analysis request is invalid.', quotaConsumed: false },
+            securityHeaders(allowedOrigin),
+          );
+        }
+        const outcome = await analysis.analyze({
+          authorization: request.headers.get('authorization'),
+          request: parsed.data,
+          networkIdentifier: request.headers.get('cf-connecting-ip') ?? '',
+        });
+        if (!outcome.ok) {
+          return errorResponse(
+            outcome.status,
+            {
+              code: outcome.code,
+              message: outcome.message,
+              retryable: outcome.retryable,
+              requestId: parsed.data.requestId,
+              quotaConsumed: outcome.quotaConsumed,
+            },
+            securityHeaders(allowedOrigin),
+          );
+        }
+        return json(outcome.result, 200, allowedOrigin);
       }
 
       return errorResponse(

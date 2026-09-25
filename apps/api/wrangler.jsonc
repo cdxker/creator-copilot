@@ -7,7 +7,8 @@
     "ENVIRONMENT": "development",
     "PROVIDER": "fake",
     "ALLOWED_EXTENSION_ORIGINS": "http://localhost:5173",
-    "DAILY_ANALYSIS_LIMIT": "10"
+    "DAILY_ANALYSIS_LIMIT": "10",
+    "NETWORK_DAILY_LIMIT": "100"
   },
   "env": {
     "production": {
@@ -16,7 +17,8 @@
         "ENVIRONMENT": "production",
         "PROVIDER": "openai",
         "ALLOWED_EXTENSION_ORIGINS": "chrome-extension://REPLACE_AFTER_STORE_UPLOAD",
-        "DAILY_ANALYSIS_LIMIT": "10"
+        "DAILY_ANALYSIS_LIMIT": "10",
+        "NETWORK_DAILY_LIMIT": "100"
       }
     }
   }

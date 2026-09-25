@@ -101,6 +101,8 @@ export const analysisResultSchema = z
   })
   .strict();
 
+export const analysisPayloadSchema = analysisResultSchema.omit({ quota: true });
+
 export const inviteRedemptionRequestSchema = z
   .object({
     inviteCode: z.string().trim().min(16).max(128).regex(/^[A-Za-z0-9_-]+$/),
@@ -151,6 +153,7 @@ export const apiErrorSchema = z
 export type AnalysisProfile = z.infer<typeof analysisProfileSchema>;
 export type AnalysisRequest = z.infer<typeof analysisRequestSchema>;
 export type AnalysisResult = z.infer<typeof analysisResultSchema>;
+export type AnalysisPayload = z.infer<typeof analysisPayloadSchema>;
 export type SuggestedExperiment = z.infer<typeof suggestedExperimentSchema>;
 export type InviteRedemptionRequest = z.infer<typeof inviteRedemptionRequestSchema>;
 export type InviteRedemptionResult = z.infer<typeof inviteRedemptionResultSchema>;

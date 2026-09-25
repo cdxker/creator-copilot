@@ -120,6 +120,81 @@ describe('createRouter', () => {
     expect(response.status).toBe(401);
     expect(await response.json()).toMatchObject({ ok: false, error: { code: 'invite_invalid' } });
   });
+
+  it('validates an analysis request before invoking the analysis service', async () => {
+    const analysis = { analyze: vi.fn() };
+    const router = createRouter({ allowedOrigins: new Set([allowedOrigin]), analysis });
+    const response = await router.fetch(
+      request('/v1/analyses', {
+        method: 'POST',
+        headers: { origin: allowedOrigin, 'content-type': 'application/json' },
+        body: JSON.stringify({ schemaVersion: 1, requestId: 'not-a-uuid' }),
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      ok: false,
+      error: { code: 'invalid_request', quotaConsumed: false },
+    });
+    expect(analysis.analyze).not.toHaveBeenCalled();
+  });
+
+  it('returns a validated analysis outcome from the service', async () => {
+    const result = {
+      schemaVersion: 1,
+      summary: 'A concise premise.',
+      evidence: ['The supplied post text is short.'],
+      recommendations: [],
+      experiment: {},
+      notices: [],
+      quota: { remaining: 9, limit: 10, resetsAt: '2026-09-25T00:00:00.000Z' },
+    };
+    const analysis = { analyze: vi.fn().mockResolvedValue({ ok: true, result }) };
+    const router = createRouter({ allowedOrigins: new Set([allowedOrigin]), analysis });
+    const body = {
+      schemaVersion: 1,
+      requestId: '123e4567-e89b-42d3-a456-426614174000',
+      mode: 'page_analysis',
+      profile: {
+        handle: '@velvetpilot',
+        displayName: 'Velvet Pilot',
+        voice: 'confident, witty, concise',
+        allowedTopics: 'luxury',
+        prohibitedTopics: 'debt',
+        monetizationDestination: 'verified creator page',
+        weeklyGoal: 'Five useful conversations',
+      },
+      context: {
+        version: 1,
+        source: 'x',
+        pageType: 'post',
+        url: 'https://x.com/velvetpilot/status/123',
+        text: 'Quiet luxury is the standard.',
+        metrics: { views: 1200 },
+      },
+    };
+    const response = await router.fetch(
+      request('/v1/analyses', {
+        method: 'POST',
+        headers: {
+          origin: allowedOrigin,
+          'content-type': 'application/json',
+          authorization: 'Bearer valid',
+          'cf-connecting-ip': '203.0.113.42',
+        },
+        body: JSON.stringify(body),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(result);
+    expect(analysis.analyze).toHaveBeenCalledWith({
+      authorization: 'Bearer valid',
+      request: body,
+      networkIdentifier: '203.0.113.42',
+    });
+  });
 });
 
 describe('readJsonBody', () => {
