@@ -1,0 +1,16 @@
+{
+  "name": "@creator-copilot/extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --environment jsdom",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@creator-copilot/shared": "0.1.0"
+  },
+  "devDependencies": {
+    "jsdom": "^29.1.1"
+  }
+}
