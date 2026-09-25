@@ -2,7 +2,8 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "rootDir": "src",
-    "types": ["vitest/globals"]
+    "jsx": "react-jsx",
+    "types": ["vitest/globals", "chrome"]
   },
   "include": ["src"]
 }
