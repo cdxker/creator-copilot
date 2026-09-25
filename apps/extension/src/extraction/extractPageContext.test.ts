@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it } from 'vitest';
-import { extractPageContext } from './extractPageContext';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { extractPageContext, extractPageContextInTab } from './extractPageContext';
 import { postFixture, profileFixture } from './fixtures';
 
 describe('extractPageContext', () => {
@@ -79,5 +79,39 @@ describe('extractPageContext', () => {
       ok: false,
       reason: 'page_not_recognized',
     });
+  });
+
+  it('classifies reserved navigation routes as feeds', () => {
+    document.body.innerHTML = postFixture('A visible home-feed post.');
+    const result = extractPageContext(document, new URL('https://x.com/home'));
+
+    expect(result).toMatchObject({ ok: true, context: { pageType: 'feed' } });
+  });
+
+  it('skips hidden articles and extracts the first visible public article', () => {
+    document.body.innerHTML = `${postFixture('hidden private-looking text').replace('<article', '<article style="display:none"')} ${postFixture('visible public post')}`;
+    const result = extractPageContext(document, new URL('https://x.com/home'));
+
+    expect(result).toMatchObject({ ok: true, context: { text: 'visible public post' } });
+    expect(JSON.stringify(result)).not.toContain('hidden private-looking text');
+  });
+
+  it('excludes hidden descendants from visible post text', () => {
+    document.body.innerHTML = postFixture('Visible sentence <span hidden>secret sentinel</span>');
+    const result = extractPageContext(document, new URL('https://x.com/person/status/123'));
+
+    expect(result).toMatchObject({ ok: true, context: { text: 'Visible sentence' } });
+    expect(JSON.stringify(result)).not.toContain('secret sentinel');
+  });
+
+  it('applies feed and visibility guards in the injected extractor', () => {
+    document.body.innerHTML = `${postFixture('hidden injected text').replace('<article', '<article aria-hidden="true"')} ${postFixture('visible injected post')}`;
+    vi.stubGlobal('location', { href: 'https://x.com/home' });
+
+    expect(extractPageContextInTab()).toMatchObject({
+      ok: true,
+      context: { pageType: 'feed', text: 'visible injected post' },
+    });
+    vi.unstubAllGlobals();
   });
 });

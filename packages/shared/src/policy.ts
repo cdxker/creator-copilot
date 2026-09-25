@@ -22,7 +22,7 @@ const rules: Array<{ category: Exclude<SafetyCategory, 'allowed'>; pattern: RegE
   {
     category: 'financial_harm',
     pattern:
-      /\b(max out|credit card|take (?:out )?a loan|borrow money|go into debt|skip rent|miss rent|empty (?:your|his|her|their) account)\b/i,
+      /\b(max out|credit card|take (?:out )?a loan|borrow (?:money|cash)|go into debt|skip rent|miss rent|empty (?:your|his|her|their) account)\b/i,
   },
   {
     category: 'account_compromise',
@@ -35,4 +35,24 @@ export function classifySafety(text: string): SafetyResult {
   return match
     ? { safe: false, category: match.category }
     : { safe: true, category: 'allowed' };
+}
+
+function prohibitedTerms(configured: string): string[] {
+  return configured
+    .split(/[,;\n]/)
+    .map((term) => term.trim().toLowerCase().replace(/^(?:do not|don't|never|no)\s+/, ''))
+    .map((term) => term.replace(/[.!]+$/, ''))
+    .filter((term) => term.length >= 3);
+}
+
+export function conflictsWithCreatorBoundaries(text: string, configured: string): boolean {
+  const normalized = text.toLowerCase();
+  return prohibitedTerms(configured).some((term) => {
+    const variants = term.endsWith('s') ? [term, term.slice(0, -1)] : [term];
+    return variants.some((variant) =>
+      new RegExp(`(^|\\W)${variant.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:\\W|$)`, 'i').test(
+        normalized,
+      ),
+    );
+  });
 }

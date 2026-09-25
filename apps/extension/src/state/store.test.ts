@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { initialCreatorState } from './defaults';
 import { createMemoryAdapter, loadPersistentState, savePersistentState } from './store';
+import { createRecommendations } from '@creator-copilot/shared';
 
 const pageContext = {
   version: 1 as const,
@@ -47,5 +48,30 @@ describe('persistent state', () => {
       recommendations: [{ id: 'saved' }],
       sessionContext: null,
     });
+  });
+
+  it('does not retain a unique source-text sentinel through generated drafts', async () => {
+    const sentinel = 'RAW_CONTEXT_SENTINEL_93812';
+    const adapter = createMemoryAdapter();
+    const profile = {
+      handle: '@sample',
+      displayName: 'Sample',
+      voice: 'confident and concise',
+      allowedTopics: 'routines',
+      prohibitedTopics: 'debt, threats',
+      contentFrequency: 'Daily',
+      preferredFormats: ['Post'],
+      monetizationDestination: 'my verified creator page',
+      weeklyGoal: 'Test three posts',
+      consentAccepted: true,
+    };
+    const recommendations = createRecommendations({ ...pageContext, text: sentinel }, profile);
+
+    await savePersistentState(
+      { ...initialCreatorState, profile, recommendations, sessionContext: { ...pageContext, text: sentinel } },
+      adapter,
+    );
+
+    expect(JSON.stringify(adapter.inspect())).not.toContain(sentinel);
   });
 });

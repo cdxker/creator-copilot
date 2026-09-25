@@ -45,4 +45,53 @@ describe('createRecommendations', () => {
     expect(result[0]).toMatchObject({ kind: 'boundary', copyable: false });
     expect(result[0]?.draft).not.toMatch(/address|threaten|expose/i);
   });
+
+  it('does not echo financially unsafe source text into drafts', () => {
+    const result = createRecommendations(
+      { ...postContext, text: 'Borrow cash to pay me' },
+      profile,
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ kind: 'boundary', copyable: false });
+    expect(JSON.stringify(result)).not.toContain('Borrow cash to pay me');
+  });
+
+  it('blocks an unsafe monetization destination', () => {
+    const result = createRecommendations(postContext, {
+      ...profile,
+      monetizationDestination: 'max out your credit card',
+    });
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ kind: 'boundary', copyable: false });
+    expect(JSON.stringify(result)).not.toMatch(/credit card/i);
+  });
+
+  it('applies creator prohibited topics to page content', () => {
+    const result = createRecommendations(
+      { ...postContext, text: 'My thoughts on politics and creators' },
+      { ...profile, prohibitedTopics: 'politics, threats' },
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ kind: 'boundary', copyable: false });
+  });
+
+  it('treats prohibition wording as a constraint rather than unsafe source content', () => {
+    const result = createRecommendations(
+      postContext,
+      { ...profile, prohibitedTopics: 'No blackmail, no doxxing' },
+    );
+
+    expect(result).toHaveLength(3);
+  });
+
+  it('never persists a verbatim source sentinel in generated output', () => {
+    const sentinel = 'UNIQUE_SOURCE_SENTINEL_48291';
+    const result = createRecommendations({ ...postContext, text: sentinel }, profile);
+
+    expect(result).toHaveLength(3);
+    expect(JSON.stringify(result)).not.toContain(sentinel);
+  });
 });
