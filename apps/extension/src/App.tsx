@@ -13,6 +13,7 @@ import { creatorReducer, type CreatorAction } from './state/reducer';
 import { clearPersistentState, loadPersistentState, savePersistentState } from './state/store';
 import { ApiClientError, CreatorCopilotApiClient } from './lib/apiClient';
 import { createInstallationId } from './state/auth';
+import { PRODUCTION_API_ORIGIN } from './releaseConfig';
 
 type AppProps = {
   initialState?: CreatorState;
@@ -21,9 +22,12 @@ type AppProps = {
 };
 
 function createDefaultApiClient() {
+  const isDevelopment = import.meta.env.DEV;
   return new CreatorCopilotApiClient({
-    baseUrl: import.meta.env.VITE_CREATOR_COPILOT_API_URL ?? 'http://127.0.0.1:8787',
-    allowLocalhost: import.meta.env.DEV,
+    baseUrl: isDevelopment
+      ? import.meta.env.VITE_CREATOR_COPILOT_API_URL ?? 'http://127.0.0.1:8787'
+      : PRODUCTION_API_ORIGIN,
+    allowLocalhost: isDevelopment,
   });
 }
 
