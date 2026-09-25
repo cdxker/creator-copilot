@@ -1,0 +1,23 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "creator-copilot-api-dev",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-24",
+  "vars": {
+    "ENVIRONMENT": "development",
+    "PROVIDER": "fake",
+    "ALLOWED_EXTENSION_ORIGINS": "http://localhost:5173",
+    "DAILY_ANALYSIS_LIMIT": "10"
+  },
+  "env": {
+    "production": {
+      "name": "creator-copilot-api",
+      "vars": {
+        "ENVIRONMENT": "production",
+        "PROVIDER": "openai",
+        "ALLOWED_EXTENSION_ORIGINS": "chrome-extension://REPLACE_AFTER_STORE_UPLOAD",
+        "DAILY_ANALYSIS_LIMIT": "10"
+      }
+    }
+  }
+}
