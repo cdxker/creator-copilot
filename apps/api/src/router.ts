@@ -1,4 +1,5 @@
-import { API_SCHEMA_VERSION } from '@creator-copilot/shared';
+import { API_SCHEMA_VERSION, inviteRedemptionRequestSchema } from '@creator-copilot/shared';
+import type { AuthGateway } from './auth';
 import { errorResponse } from './errors';
 
 export const MAX_JSON_BODY_BYTES = 24 * 1024;
@@ -8,6 +9,7 @@ export type Logger = Pick<Console, 'error' | 'info' | 'warn'>;
 export type RouterDependencies = {
   allowedOrigins: ReadonlySet<string>;
   logger?: Logger;
+  auth?: AuthGateway;
 };
 
 export type JsonBodyResult =
@@ -53,7 +55,13 @@ export async function readJsonBody(request: Request): Promise<JsonBodyResult> {
   }
 }
 
-export function createRouter({ allowedOrigins, logger = console }: RouterDependencies) {
+function authErrorReason(reason: 'invalid' | 'expired' | 'revoked') {
+  if (reason === 'expired') return { code: 'session_expired' as const, message: 'This session has expired.' };
+  if (reason === 'revoked') return { code: 'session_revoked' as const, message: 'This session was revoked.' };
+  return { code: 'authentication_required' as const, message: 'A valid session is required.' };
+}
+
+export function createRouter({ allowedOrigins, logger = console, auth }: RouterDependencies) {
   return {
     async fetch(request: Request): Promise<Response> {
       const originHeader = request.headers.get('origin') ?? undefined;
@@ -96,6 +104,71 @@ export function createRouter({ allowedOrigins, logger = console }: RouterDepende
           );
         }
         return json({ ok: true, schemaVersion: API_SCHEMA_VERSION }, 200, allowedOrigin);
+      }
+
+      if (url.pathname === '/v1/invites/redeem') {
+        if (request.method !== 'POST') {
+          return errorResponse(
+            405,
+            { code: 'method_not_allowed', message: 'Method not allowed.' },
+            { ...securityHeaders(allowedOrigin), allow: 'POST' },
+          );
+        }
+        if (!auth) {
+          return errorResponse(
+            503,
+            { code: 'internal_error', message: 'Activation is temporarily unavailable.', retryable: true },
+            securityHeaders(allowedOrigin),
+          );
+        }
+        const body = await readJsonBody(request);
+        if (!body.ok) {
+          return errorResponse(
+            body.status,
+            { code: 'invalid_request', message: body.message },
+            securityHeaders(allowedOrigin),
+          );
+        }
+        const parsed = inviteRedemptionRequestSchema.safeParse(body.value);
+        if (!parsed.success) {
+          return errorResponse(
+            400,
+            { code: 'invalid_request', message: 'The activation request is invalid.' },
+            securityHeaders(allowedOrigin),
+          );
+        }
+        const result = await auth.redeemInvite(parsed.data);
+        if (!result) {
+          return errorResponse(
+            401,
+            { code: 'invite_invalid', message: 'This invite cannot be redeemed.' },
+            securityHeaders(allowedOrigin),
+          );
+        }
+        return json(result, 200, allowedOrigin);
+      }
+
+      if (url.pathname === '/v1/session') {
+        if (request.method !== 'DELETE') {
+          return errorResponse(
+            405,
+            { code: 'method_not_allowed', message: 'Method not allowed.' },
+            { ...securityHeaders(allowedOrigin), allow: 'DELETE' },
+          );
+        }
+        if (!auth) {
+          return errorResponse(
+            503,
+            { code: 'internal_error', message: 'Session management is temporarily unavailable.', retryable: true },
+            securityHeaders(allowedOrigin),
+          );
+        }
+        const result = await auth.revokeSession(request.headers.get('authorization'));
+        if (!result.ok) {
+          const details = authErrorReason(result.reason);
+          return errorResponse(401, { ...details, retryable: false }, securityHeaders(allowedOrigin));
+        }
+        return new Response(null, { status: 204, headers: securityHeaders(allowedOrigin) });
       }
 
       return errorResponse(

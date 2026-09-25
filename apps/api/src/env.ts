@@ -1,8 +1,10 @@
 export type Env = {
+  DB: D1Database;
   ENVIRONMENT: 'development' | 'production' | 'test';
   PROVIDER: 'fake' | 'openai';
   ALLOWED_EXTENSION_ORIGINS: string;
   DAILY_ANALYSIS_LIMIT: string;
+  SESSION_SIGNING_SECRET: string;
 };
 
 export type RuntimeConfig = {
@@ -10,6 +12,7 @@ export type RuntimeConfig = {
   provider: Env['PROVIDER'];
   allowedOrigins: Set<string>;
   dailyAnalysisLimit: number;
+  signingSecret: string;
 };
 
 export function parseEnv(env: Env): RuntimeConfig {
@@ -30,11 +33,15 @@ export function parseEnv(env: Env): RuntimeConfig {
   ) {
     throw new Error('Production requires a concrete chrome-extension:// origin.');
   }
+  if (new TextEncoder().encode(env.SESSION_SIGNING_SECRET).byteLength < 32) {
+    throw new Error('SESSION_SIGNING_SECRET must be at least 32 bytes.');
+  }
 
   return {
     environment: env.ENVIRONMENT,
     provider: env.PROVIDER,
     allowedOrigins,
     dailyAnalysisLimit,
+    signingSecret: env.SESSION_SIGNING_SECRET,
   };
 }

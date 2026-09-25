@@ -63,6 +63,63 @@ describe('createRouter', () => {
     expect(wrongMethod.status).toBe(405);
     expect(wrongMethod.headers.get('allow')).toBe('GET');
   });
+
+  it('redeems an invite and revokes the active session through the auth boundary', async () => {
+    const token = 'ccs1.session.secret.signature';
+    const auth = {
+      redeemInvite: vi.fn().mockResolvedValue({
+        schemaVersion: API_SCHEMA_VERSION,
+        token,
+        expiresAt: '2026-10-24T12:00:00.000Z',
+        quota: { remaining: 10, limit: 10, resetsAt: '2026-09-25T00:00:00.000Z' },
+      }),
+      revokeSession: vi.fn().mockResolvedValue({ ok: true, session: { id: 'session-1' } }),
+    };
+    const router = createRouter({ allowedOrigins: new Set([allowedOrigin]), auth });
+    const redeem = await router.fetch(
+      request('/v1/invites/redeem', {
+        method: 'POST',
+        headers: { origin: allowedOrigin, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          inviteCode: 'creator-beta-1234567890',
+          installationId: '123e4567-e89b-42d3-a456-426614174000',
+        }),
+      }),
+    );
+    const revoke = await router.fetch(
+      request('/v1/session', {
+        method: 'DELETE',
+        headers: { origin: allowedOrigin, authorization: `Bearer ${token}` },
+      }),
+    );
+
+    expect(redeem.status).toBe(200);
+    expect(await redeem.json()).toMatchObject({ token, quota: { remaining: 10 } });
+    expect(auth.redeemInvite).toHaveBeenCalledTimes(1);
+    expect(revoke.status).toBe(204);
+    expect(auth.revokeSession).toHaveBeenCalledWith(`Bearer ${token}`);
+  });
+
+  it('does not reveal whether an invite code ever existed', async () => {
+    const auth = {
+      redeemInvite: vi.fn().mockResolvedValue(null),
+      revokeSession: vi.fn(),
+    };
+    const router = createRouter({ allowedOrigins: new Set([allowedOrigin]), auth });
+    const response = await router.fetch(
+      request('/v1/invites/redeem', {
+        method: 'POST',
+        headers: { origin: allowedOrigin, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          inviteCode: 'creator-beta-0000000000',
+          installationId: '123e4567-e89b-42d3-a456-426614174000',
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toMatchObject({ ok: false, error: { code: 'invite_invalid' } });
+  });
 });
 
 describe('readJsonBody', () => {
