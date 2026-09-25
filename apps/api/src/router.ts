@@ -6,6 +6,7 @@ import {
 import type { AnalysisService } from './analysis';
 import type { AuthGateway } from './auth';
 import { errorResponse } from './errors';
+import { publicPageResponse } from './publicPages';
 
 export const MAX_JSON_BODY_BYTES = 24 * 1024;
 
@@ -101,6 +102,9 @@ export function createRouter({ allowedOrigins, logger = console, auth, analysis 
       }
 
       const url = new URL(request.url);
+      const publicPage = publicPageResponse(url.pathname, request.method);
+      if (publicPage) return publicPage;
+
       if (url.pathname === '/v1/health') {
         if (request.method !== 'GET') {
           return errorResponse(
